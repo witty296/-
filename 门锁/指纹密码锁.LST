@@ -1,0 +1,764 @@
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE __________
+OBJECT MODULE PLACED IN 指纹密码锁.OBJ
+COMPILER INVOKED BY: E:\Keil_v5\C51\BIN\C51.EXE 指纹密码锁.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include <reg52.h>
+   2          #include <intrins.h>
+   3          #include"24C0x.h"
+   4          #include"LCD12864.h"
+   5          #define uchar unsigned char
+   6          #define uint unsigned int
+   7           
+   8          #define buffer1ID  0x01
+   9          #define buffer2ID  0x02
+  10          #define queren  0x88
+  11          #define tuichu  0x84
+  12          #define shanchu 0x82
+  13          
+  14          #define User 1             
+  15          
+  16          void fan();
+  17                  
+  18          sbit B0=B^0;
+  19          sbit B7=B^7;
+  20          sbit k2=P3^7;
+  21          sbit jidianqi=P3^6;
+  22          sbit Feng=P2^0;
+  23                  
+  24          extern unsigned char times[];
+  25          uchar  Member=1,sec;
+  26          uchar  ErrorCount;
+  27          uchar  code buffer[User][6]=
+  28          {
+  29           {"000000"}
+  30          };
+  31                  
+  32                  
+  33          uchar dz[4];
+  34          uchar time[4];       
+  35          uchar mima[6];
+  36          uchar mimag[6];
+  37          uchar mimaID[6]={1,2,3,4,5,6};
+  38          
+  39          
+  40          uchar Address1=20,tempx=20; 
+  41          uchar Address2=20;   
+  42                  
+  43          uchar data K;
+  44          uchar data Key;
+  45                  
+  46          uint PageID;
+  47          uchar data querenma=11;
+  48          uchar sum[2];
+  49          int summaf,summas;
+  50          
+  51          uchar  xdata UserPassword[7]={0};//密码
+  52          uchar  xdata DSY_BUFFER[16] ={0};//缓存
+  53          
+  54          
+  55          void Red_Init(void);
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 2   
+
+  56          #include "zhiwen.h"
+  57          //检测脉冲宽度
+  58          unsigned char check(void);
+  59          
+  60          unsigned char redchange(unsigned char rednum);
+  61                  
+  62          
+  63          void delayms(unsigned int z)
+  64          {
+  65   1        unsigned int x,y;
+  66   1        for(x=z;x>0;x--)
+  67   1          for(y=110;y>0;y--);
+  68   1      }
+  69          
+  70          /********************************************************************
+  71          * 名称 : Chack(uchar User_Number)
+  72          * 功能 : 单一用户密码检测
+  73          * 输入 : User_Number
+  74          * 输出 : 密码正确与错误，错误返回0，正确返回1
+  75          ********************************************************************/
+  76          uchar Chack(uchar User_Number)
+  77          {
+  78   1        uchar flag, i,temp[6],Address;
+  79   1        Address=User_Number*10;
+  80   1        for(i=0;i<6;i++)
+  81   1        {
+  82   2          temp[i]=x24c02_read(Address);
+  83   2          delayms(10);
+  84   2          Address++;
+  85   2        }
+  86   1        for(i=0;i<6;i++)
+  87   1        {
+  88   2          if(temp[i]==UserPassword[i])
+  89   2            flag=1;
+  90   2          else  
+  91   2            flag=0;   
+  92   2        }
+  93   1        return flag;
+  94   1      }
+  95          
+  96          /********************************************************************
+  97          * 名称 : PassWord_Chack()
+  98          * 功能 : 所有用户密码检测
+  99          * 输入 : 无
+ 100          * 输出 : 密码正确与错误，错误返回0，正确返回1
+ 101          ********************************************************************/
+ 102          uchar PassWord_Chack()
+ 103          {
+ 104   1        uchar i=0;
+ 105   1        while(i<User)
+ 106   1        {
+ 107   2          if(Chack(i)==1)
+ 108   2          {
+ 109   3            Member=i+1;
+ 110   3            return 1;
+ 111   3          }
+ 112   2          i++;  
+ 113   2        }
+ 114   1        return 0; 
+ 115   1      }
+ 116             
+ 117          void delay(uint tt)
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 3   
+
+ 118          {  uchar i;
+ 119   1         while(tt--)
+ 120   1         {
+ 121   2         for(i=0;i<125;i++);
+ 122   2         }
+ 123   1      }
+ 124          /********************************************************************
+ 125          * 名称 : UART_Init()
+ 126          * 功能 : 单片机串口初始化
+ 127          * 单片机：晶振11.0592MHz 波特率为9600bps
+ 128          * 指纹模块：波特率为9600bps，
+ 129          ********************************************************************/        
+ 130          void UART_Init()
+ 131          {
+ 132   1        SCON= 0x50;               //串口方式1 //REN=1; 允许接收
+ 133   1        PCON=0x00;                //SMOD=0
+ 134   1        TMOD= 0x21;               //定时器1定时方式2
+ 135   1        TH1= 0xFD;                //11.0592MHz  模块默认波特率为9600bps
+ 136   1        TL1= 0xFD;                     
+ 137   1        TR1= 1;                   //启动定时器 
+ 138   1        EA=1;       
+ 139   1      }
+ 140              
+ 141          unsigned char Keycan(void) //按键扫描程序 P1.0--P1.3为行线 P1.4--P1.7为列线
+ 142          {
+ 143   1        unsigned char rcode, ccode;
+ 144   1        P1 = 0xF0;      // 发全0行扫描码，列线输入
+ 145   1        if((P1&0xF0) != 0xF0) // 若有键按下
+ 146   1        {
+ 147   2          delay(1);// 延时去抖动 
+ 148   2          if((P1&0xF0) != 0xF0)
+ 149   2          {  rcode = 0xFE;         // 逐行扫描初值
+ 150   3          while((rcode&0x10) != 0)
+ 151   3          {
+ 152   4             P1 = rcode;         // 输出行扫描码
+ 153   4            if((P1&0xF0) != 0xF0) // 本行有键按下
+ 154   4            {
+ 155   5             ccode = (P1&0xF0)|0x0F;
+ 156   5             //do{;}
+ 157   5           while((P1&0xF0) != 0xF0); //等待键释放
+ 158   5             return ((~rcode) + (~ccode)); // 返回键编码
+ 159   5            }
+ 160   4          else
+ 161   4          rcode = (rcode<<1)|0x01; // 行扫描码左移一位
+ 162   4          }
+ 163   3          }
+ 164   2        }  
+ 165   1        return 0; // 无键按下，返回值为0
+ 166   1      }
+ 167                  
+ 168          void KeyDeal(unsigned char Key)
+ 169          {  //unsigned char n;
+ 170   1         if(Key!=0)
+ 171   1       {
+ 172   2                 
+ 173   2             switch(Key)
+ 174   2             {
+ 175   3             case 0x11: K=1; break;  
+ 176   3             case 0x21: K=2; break;  
+ 177   3             case 0x41: K=3; break;  
+ 178   3             case 0x81:  break;       
+ 179   3             case 0x12: K=4; break;
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 4   
+
+ 180   3             case 0x22: K=5; break;
+ 181   3             case 0x42: K=6; break;
+ 182   3             case 0x82: K=34;break;   
+ 183   3             case 0x14: K=7; break;
+ 184   3             case 0x24: K=8; break;
+ 185   3             case 0x44: K=9; break;
+ 186   3             case 0x84:  break;   
+ 187   3             case 0x18:  break;   
+ 188   3             case 0x28: K=0; break;
+ 189   3             case 0x48:  K=11; break;
+ 190   3             case 0x88:  break;   
+ 191   3             default: break;
+ 192   3             }
+ 193   2        }
+ 194   1      }
+ 195                  
+ 196           
+ 197          void shuazhiwen()
+ 198          {
+ 199   1          uchar IDs1,IDs2,IDs3;  
+ 200   1        LcmClearTXT();
+ 201   1        PutStr(1,1,"请按手指开锁");      
+ 202   1        SFG_identify();
+ 203   1        while(querenma==2)
+ 204   1        SFG_identify(); 
+ 205   1        if(querenma==0)
+ 206   1         {
+ 207   2          LcmClearTXT();
+ 208   2          PutStr(1,2,"门已打开"); 
+ 209   2          IDs1=PageID/100;
+ 210   2          IDs2=PageID/10%10;
+ 211   2          IDs3=PageID%10;
+ 212   2          PutStr(2,1,"编号为:");
+ 213   2          WriteCommand(0x8D);   //指定第三行显示位置
+ 214   2          WriteData(0x30+IDs1);
+ 215   2          WriteData(0x30+IDs2);
+ 216   2          WriteData(0x30+IDs3);
+ 217   2          ErrorCount=0;
+ 218   2          Feng=1;
+ 219   2          jidianqi=0;
+ 220   2          delay(2500); 
+ 221   2          jidianqi=1;
+ 222   2          
+ 223   2        }
+ 224   1          else if(querenma==9)
+ 225   1          {
+ 226   2            LcmClearTXT();
+ 227   2            PutStr(1,1,"没搜索到指纹");
+ 228   2            PutStr(2,1,"请重新按手指");
+ 229   2            ErrorCount=3;
+ 230   2            Feng=0;
+ 231   2          }
+ 232   1            else 
+ 233   1          {
+ 234   2            LcmClearTXT();
+ 235   2            PutStr(1,1,"接收包出错");
+ 236   2          }
+ 237   1          delay(2000);
+ 238   1         //  while(Keycan()==0);
+ 239   1      }
+ 240          void addfinger()
+ 241          {
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 5   
+
+ 242   1        uchar IDa1,IDa2,IDa3;
+ 243   1        LcmClearTXT();
+ 244   1        PutStr(1,2,"请按手指");    
+ 245   1        SFG_getimage();
+ 246   1        while(querenma!=0)
+ 247   1        SFG_getimage();
+ 248   1        SFG_genchar(buffer1ID);
+ 249   1        UART_Init();
+ 250   1        SFG_fastsearch(buffer1ID);
+ 251   1        while(querenma==1)
+ 252   1        SFG_fastsearch(buffer1ID);
+ 253   1        if(querenma==0)
+ 254   1        {
+ 255   2          LcmClearTXT();
+ 256   2          PutStr(1,1,"该指纹已存储");
+ 257   2          PutStr(3,0,"  按任意键继续"); 
+ 258   2            while(Keycan()==0);
+ 259   2        }
+ 260   1        else if(querenma==9)
+ 261   1          {
+ 262   2            LcmClearTXT();
+ 263   2            PutStr(1,1,"请再次按手指");
+ 264   2            SFG_enroll();
+ 265   2            while(querenma==2)
+ 266   2            SFG_enroll();
+ 267   2            LcmClearTXT();
+ 268   2            if(querenma==0)
+ 269   2            { 
+ 270   3              IDa1=PageID/100;IDa2=PageID/10%10;IDa3=PageID%10;
+ 271   3              PutStr(1,1,"指纹采集成功");
+ 272   3              PutStr(2,1,"编号为:");
+ 273   3              WriteCommand(0x8D); 
+ 274   3              WriteData(0x30+IDa1);WriteData(0x30+IDa2);WriteData(0x30+IDa3);
+ 275   3              }
+ 276   2            else if(querenma!=0)
+ 277   2              {
+ 278   3              PutStr(1,1,"指纹采集失败");
+ 279   3              PutStr(2,1,"请重新操作");
+ 280   3            }
+ 281   2          PutStr(3,0,"  按任意键继续"); 
+ 282   2            while(Keycan()==0);
+ 283   2            }
+ 284   1        LcmClearTXT();
+ 285   1            PutStr(0,0,"按键1 : 增加指纹"); 
+ 286   1          PutStr(1,0,"按键2 : 删去指纹");
+ 287   1          PutStr(2,0,"按键3 : 手动开锁");
+ 288   1          PutStr(3,0,"按键4 : 修改密码");
+ 289   1      }
+ 290          void deletfinger()
+ 291          {
+ 292   1        uchar i,j=0;
+ 293   1        LcmClearTXT();
+ 294   1        PutStr(1,0,"输入删去的指纹号");
+ 295   1        for(i=0;i<5;i++)dz[i]=0;  
+ 296   1           Key=Keycan();
+ 297   1           while(Key!=queren)
+ 298   1           {
+ 299   2             Key=Keycan();
+ 300   2             KeyDeal(Key);
+ 301   2             delay(30);                                     //按键有抖动@@@
+ 302   2             if(Key==0)K=10;
+ 303   2             if((K>=0)&&(K<=9))
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 6   
+
+ 304   2             {
+ 305   3              dz[j]=K;
+ 306   3            if(j<3)
+ 307   3            { 
+ 308   4              WriteCommand(0x88+j);   //指定第三行显示位置
+ 309   4              WriteData(0x30+dz[j]);  
+ 310   4            }
+ 311   3              ++j;
+ 312   3            if(j==4)
+ 313   3              j=3;                           //@@#yinhuang
+ 314   3             }   //显示LCD12864并行显示 
+ 315   2           if(K==34)    //按了删除键
+ 316   2            {
+ 317   3              if(j==0)
+ 318   3            {
+ 319   4              WriteCommand(0x88);   //指定第三行显示位置
+ 320   4              WriteData(0x20);
+ 321   4            }
+ 322   3            else
+ 323   3            {
+ 324   4              --j;
+ 325   4              WriteCommand(0x88+j);     //指定第三行显示位置
+ 326   4              WriteData(0x20);
+ 327   4            }
+ 328   3          }
+ 329   2        }
+ 330   1        if(j>=2)
+ 331   1        PageID=dz[2]+dz[1]*10+dz[0]*100;
+ 332   1        if(j==1)
+ 333   1        PageID=dz[1]+dz[0]*10;
+ 334   1        if(j==0)
+ 335   1        PageID=dz[0];
+ 336   1        SFG_deletchar(PageID);
+ 337   1        if(querenma==0)
+ 338   1        {
+ 339   2          LcmClearTXT();
+ 340   2          PutStr(1,1,"删去指纹号成功！"); 
+ 341   2        }
+ 342   1        else
+ 343   1        {
+ 344   2          LcmClearTXT();
+ 345   2          PutStr(1,2,"删去指纹号失败！");  
+ 346   2        }
+ 347   1        PutStr(2,0,"  按任意键继续"); 
+ 348   1        while(Keycan()==0);
+ 349   1        LcmClearTXT();
+ 350   1            PutStr(0,0,"按键1 : 增加指纹"); 
+ 351   1          PutStr(1,0,"按键2 : 删去指纹");
+ 352   1          PutStr(2,0,"按键3 : 手动开锁");
+ 353   1          PutStr(3,0,"按键4 : 修改密码");
+ 354   1      }
+ 355                  
+ 356          void gaimima()
+ 357          {
+ 358   1        uchar i,j=0,mima1[6],mima2[6];
+ 359   1        uchar k,temp;
+ 360   1        LcmClearTXT();
+ 361   1        PutStr(1,1,"请输入新密码");
+ 362   1        for(i=0;i<6;i++)mima1[i]=0;                 
+ 363   1           Key=Keycan();
+ 364   1            while(Key!=queren)
+ 365   1           {
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 7   
+
+ 366   2             Key=Keycan();
+ 367   2             KeyDeal(Key);
+ 368   2             delay(30);                                     
+ 369   2             if(Key==0)K=10;
+ 370   2             if((K>=0)&&(K<=9))
+ 371   2             {
+ 372   3              mima1[j]=K;
+ 373   3            if(j<6)
+ 374   3            { 
+ 375   4              WriteCommand(0x89+j);   //指定第三行显示位置
+ 376   4              WriteData(0x0f);  
+ 377   4            }
+ 378   3              ++j;
+ 379   3            if(j==7)
+ 380   3              j=6;                           //@@#yinhuang
+ 381   3             }   //显示LCD12864并行显示 
+ 382   2           if(K==34)    //按了删除键
+ 383   2            {
+ 384   3              if(j==0)
+ 385   3            {
+ 386   4              WriteCommand(0x89);   //指定第三行显示位置
+ 387   4              WriteData(0x20);
+ 388   4            }
+ 389   3            else
+ 390   3            {
+ 391   4              --j;
+ 392   4              WriteCommand(0x89+j);     //指定第三行显示位置
+ 393   4              WriteData(0x20);
+ 394   4            }
+ 395   3          }
+ 396   2        }
+ 397   1        LcmClearTXT();
+ 398   1        LcmClearTXT();
+ 399   1        j=0;
+ 400   1        PutStr(1,0,"请再次输入新密码");
+ 401   1        for(i=0;i<6;i++)mima2[i]=0;                 
+ 402   1           Key=Keycan();
+ 403   1            while(Key!=queren)
+ 404   1           {
+ 405   2             Key=Keycan();
+ 406   2             KeyDeal(Key);
+ 407   2             delay(30);                                     
+ 408   2             if(Key==0)K=10;
+ 409   2             if((K>=0)&&(K<=9))
+ 410   2             {
+ 411   3              mima2[j]=K;
+ 412   3            if(j<6)
+ 413   3            {   
+ 414   4              WriteCommand(0x89+j);   //指定第三行显示位置
+ 415   4              WriteData(0x0f);  
+ 416   4            }
+ 417   3              ++j;
+ 418   3            if(j==7)
+ 419   3              j=6;                           //@@#yinhuang
+ 420   3             }   //显示LCD12864并行显示 
+ 421   2           if(K==34)    //按了删除键
+ 422   2            {
+ 423   3              if(j==0)
+ 424   3            {
+ 425   4              WriteCommand(0x89);   //指定第三行显示位置
+ 426   4              WriteData(0x20);
+ 427   4            }
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 8   
+
+ 428   3            else
+ 429   3            {
+ 430   4              --j;
+ 431   4              WriteCommand(0x89+j);     //指定第三行显示位置
+ 432   4              WriteData(0x20);
+ 433   4            }
+ 434   3          }
+ 435   2        }
+ 436   1        LcmClearTXT();
+ 437   1        if((mima1[0]==mima2[0])&&(mima1[1]==mima2[1])&&(mima1[2]==mima2[2])&&(mima1[3]==mima2[3])&&(mima1[4]==mim
+             -a2[4])&&(mima1[5]==mima2[5]))
+ 438   1        {
+ 439   2          for(i=0;i<6;i++)
+ 440   2          mimaID[i]=mima1[i];
+ 441   2          /////////////////////////////////////////////////////
+ 442   2          for(i=0;i<6;i++)           //密码限制在6位以内
+ 443   2          {
+ 444   3            UserPassword[i]=mima1[i]+0x30;                            
+ 445   3          }
+ 446   2      //    temp=(Member-1)*10;
+ 447   2          temp=1; 
+ 448   2          delayms(5);
+ 449   2          for(k=0;k<6;k++)
+ 450   2          {
+ 451   3            x24c02_write(temp,UserPassword[k]);
+ 452   3            delayms(10);
+ 453   3            temp++;
+ 454   3          }  
+ 455   2          //////////////////////////////////////////////////////
+ 456   2          PutStr(0,1,"密码修改成功"); 
+ 457   2          PutStr(3,0,"  按任意键继续");
+ 458   2          ErrorCount=0;
+ 459   2          while(Keycan()==0);
+ 460   2        }
+ 461   1        else
+ 462   1        {
+ 463   2          PutStr(0,0,"  密码修改失败  ");
+ 464   2          PutStr(1,0,"两次输入的密码不"); 
+ 465   2          PutStr(2,0,"一致，请重新操作");       
+ 466   2          PutStr(3,0,"  按任意键继续"); 
+ 467   2          while(Keycan()==0);
+ 468   2        }
+ 469   1        LcmClearTXT();
+ 470   1            PutStr(0,0,"按键1 : 增加指纹"); 
+ 471   1          PutStr(1,0,"按键2 : 删去指纹");
+ 472   1          PutStr(2,0,"按键3 : 手动开锁");
+ 473   1          PutStr(3,0,"按键4 : 修改密码");
+ 474   1      }
+ 475          
+ 476          
+ 477          void zhu()
+ 478          {    
+ 479   1          LcmClearTXT();
+ 480   1        PutStr(1,2,"门已打开");
+ 481   1          jidianqi=0;
+ 482   1        delay(2500); 
+ 483   1        jidianqi=1;
+ 484   1        PutStr(3,0,"  按任意键继续");
+ 485   1        while(Keycan()==0);
+ 486   1            PutStr(0,0,"按键1 : 增加指纹"); 
+ 487   1          PutStr(1,0,"按键2 : 删去指纹");
+ 488   1          PutStr(2,0,"按键3 : 手动开锁");
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 9   
+
+ 489   1          PutStr(3,0,"按键4 : 修改密码");
+ 490   1      }
+ 491          
+ 492          void guanliyuan()
+ 493          {    
+ 494   1            uchar i,j=0,x=1;
+ 495   1            uchar Right_flag;
+ 496   1            LcmClearTXT();
+ 497   1          PutStr(1,1,"请输入密码："); 
+ 498   1           for(i=0;i<6;i++)mima[i]=0;                 
+ 499   1           Key=Keycan();
+ 500   1            while(Key!=queren)
+ 501   1           {
+ 502   2             Key=Keycan();
+ 503   2             KeyDeal(Key);
+ 504   2             delay(30);                                     
+ 505   2             if(Key==0)K=10;
+ 506   2             if((K>=0)&&(K<=9))
+ 507   2             {
+ 508   3              mima[j]=K;
+ 509   3      
+ 510   3            if(j<6)
+ 511   3            { 
+ 512   4             WriteCommand(0x89+j);    //指定第三行显示位置
+ 513   4               WriteData(0x0f); 
+ 514   4      
+ 515   4            }
+ 516   3              ++j;
+ 517   3            if(j==7)
+ 518   3              j=6;                          
+ 519   3             }   //显示LCD12864并行显示 
+ 520   2           if(K==34)    //按了删除键
+ 521   2            {
+ 522   3              if(j==0)
+ 523   3            {
+ 524   4                WriteCommand(0x89);   //指定第三行显示位置
+ 525   4                  WriteData(0x20);
+ 526   4            }
+ 527   3            else
+ 528   3            {
+ 529   4              --j;
+ 530   4                WriteCommand(0x89+j);     //指定第三行显示位置
+ 531   4                  WriteData(0x20);
+ 532   4            }
+ 533   3            }
+ 534   2           }
+ 535   1          LcmClearTXT();
+ 536   1      
+ 537   1      
+ 538   1          for(i=0;i<6;i++)
+ 539   1               {
+ 540   2                  UserPassword[i]=mima[i]+0x30;
+ 541   2        
+ 542   2                } 
+ 543   1         if(j==6)
+ 544   1          {
+ 545   2           if(mima[0]==1&&mima[1]==3&&mima[2]==1&&mima[3]==4&&mima[4]==2&&mima[5]==0)
+ 546   2            Right_flag=1;
+ 547   2          else
+ 548   2          Right_flag=0;
+ 549   2                }
+ 550   1          if (Right_flag==1)
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 10  
+
+ 551   1         {
+ 552   2               Right_flag=0;
+ 553   2              
+ 554   2             for(i=0;i<6;i++)mima[i]=0;
+ 555   2          PutStr(0,0,"按键1 : 增加指纹"); 
+ 556   2          PutStr(1,0,"按键2 : 删去指纹");
+ 557   2          PutStr(2,0,"按键3 : 手动开锁");
+ 558   2          PutStr(3,0,"按键4 : 修改密码");
+ 559   2           while(i!=tuichu)
+ 560   2            {  
+ 561   3           i=Keycan();
+ 562   3        
+ 563   3          KeyDeal(i);  
+ 564   3            switch(K)
+ 565   3            {
+ 566   4             case 1:    addfinger();K=6; break;
+ 567   4             case 2:    deletfinger();    break;
+ 568   4           case 3:   zhu(); K=8;  break;
+ 569   4           case 4:    gaimima();        break;
+ 570   4             default: break;
+ 571   4            }
+ 572   3            }
+ 573   2           }
+ 574   1          else
+ 575   1          {
+ 576   2      
+ 577   2          PutStr(1,2,"密码错误");
+ 578   2          PutStr(2,0,"  请重新操作！"); 
+ 579   2          PutStr(3,0,"  按任意键继续"); 
+ 580   2             while(Keycan()==0);
+ 581   2          PutStr(0,0,"按键1 : 增加指纹"); 
+ 582   2          PutStr(1,0,"按键2 : 删去指纹");
+ 583   2          PutStr(2,0,"按键3 : 手动开锁");
+ 584   2          PutStr(3,0,"按键4 : 修改密码");
+ 585   2          }
+ 586   1        Key=0;
+ 587   1         
+ 588   1      }
+ 589          void mimakaisuo()
+ 590          {
+ 591   1        uchar i,j=0,x=1;
+ 592   1        uchar Right_flag;
+ 593   1        LcmClearTXT();
+ 594   1        PutStr(1,0,"请输入密码开锁："); 
+ 595   1        for(i=0;i<6;i++)mima[i]=0;                  
+ 596   1        Key=Keycan();
+ 597   1        while(Key!=queren)
+ 598   1        {
+ 599   2          Key=Keycan();
+ 600   2          KeyDeal(Key);
+ 601   2          delay(30);                                      
+ 602   2          if(Key==0)K=10;
+ 603   2          if((K>=0)&&(K<=9))
+ 604   2          {
+ 605   3            mima[j]=K;
+ 606   3            if(j<6)
+ 607   3            { 
+ 608   4              WriteCommand(0x89+j);   //指定第三行显示位置
+ 609   4              WriteData(0x0f);  
+ 610   4            }
+ 611   3            ++j;
+ 612   3            if(j==7)
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 11  
+
+ 613   3            j=6;                          
+ 614   3          }   //显示LCD12864并行显示 
+ 615   2          if(K==34)   //按了删除键
+ 616   2          {
+ 617   3            if(j==0)
+ 618   3            {
+ 619   4              WriteCommand(0x89);   //指定第三行显示位置
+ 620   4              WriteData(0x20);
+ 621   4            }
+ 622   3            else
+ 623   3            {
+ 624   4              --j;
+ 625   4              WriteCommand(0x89+j);     //指定第三行显示位置
+ 626   4              WriteData(0x20);
+ 627   4            }
+ 628   3          }
+ 629   2        }
+ 630   1        LcmClearTXT();
+ 631   1        for(i=0;i<6;i++)
+ 632   1        {
+ 633   2          UserPassword[i]=mima[i]+0x30;
+ 634   2        } 
+ 635   1        if(j==6){Right_flag=PassWord_Chack(); }
+ 636   1        if (Right_flag==1&&ErrorCount<3)
+ 637   1        {
+ 638   2          Right_flag=0;
+ 639   2          zhu();ErrorCount=0;  
+ 640   2          Feng=1;
+ 641   2          for(i=0;i<6;i++)mima[i]=0;
+ 642   2        }
+ 643   1        else
+ 644   1        {
+ 645   2          if(ErrorCount<3)
+ 646   2          {
+ 647   3            ErrorCount++;
+ 648   3            PutStr(1,2,"密码错误");
+ 649   3            PutStr(2,0,"  还有  次机会"); 
+ 650   3            PutStr(3,0,"  按任意键继续");
+ 651   3            WriteCommand(0x8a);
+ 652   3            WriteData(' ');
+ 653   3            WriteData(3-ErrorCount+0x30);
+ 654   3          }
+ 655   2          if(ErrorCount==3)
+ 656   2          {
+ 657   3            Feng=0;
+ 658   3            LcmClearTXT();
+ 659   3            PutStr(1,0,"  密码已锁死");
+ 660   3            PutStr(2,0,"  请指纹开锁"); 
+ 661   3          }
+ 662   2          delay(1000);
+ 663   2        }
+ 664   1        Key=0;
+ 665   1        LcmClearTXT();
+ 666   1      }
+ 667          void fan()
+ 668          
+ 669          {
+ 670   1      //  PutStr(1,2,"请先按键");
+ 671   1      //  PutStr(2,2,"再刷指纹");
+ 672   1        if(Key!=0x81)     //管理员操作
+ 673   1        {
+ 674   2        PutStr(0,2,"欢迎使用");
+C51 COMPILER V9.60.0.0   __________                                                        03/24/2023 19:33:34 PAGE 12  
+
+ 675   2        PutStr(1,1,"指纹门禁系统");
+ 676   2        PutStr(2,1,"请按 C键开锁");
+ 677   2        PutStr(3,1,"请按手指开锁");
+ 678   2         }
+ 679   1        Key=Keycan();
+ 680   1      if(k2==1)   //指纹刷机
+ 681   1        {
+ 682   2          LcmClearTXT();
+ 683   2        shuazhiwen();
+ 684   2        LcmClearTXT();
+ 685   2        }
+ 686   1        if(Key==0x81)     //管理员操作
+ 687   1        {
+ 688   2        LcmClearTXT();
+ 689   2        guanliyuan();
+ 690   2          LcmClearTXT();
+ 691   2        }
+ 692   1        if(Key==0x84&&ErrorCount<3)     //密码开锁
+ 693   1        {
+ 694   2        LcmClearTXT();
+ 695   2        mimakaisuo();
+ 696   2          LcmClearTXT();
+ 697   2        }
+ 698   1      
+ 699   1      } 
+ 700               
+ 701          void main()
+ 702          {   
+ 703   1      
+ 704   1      //PSB=0;
+ 705   1        UART_Init();     //串口初始化     
+ 706   1          x24c02_init();     //24C02初始化
+ 707   1        LcmInit();         //LCD12864初始化                                                                          
+             -                                                                                                                        
+             -                                                                                                                        
+             -                                                                                                                        
+             -                                                                 
+ 708   1        LcmClearTXT();     //LCD12864清屏 
+ 709   1        while(1) 
+ 710   1          { 
+ 711   2            fan();
+ 712   2            delay(100);     
+ 713   2          } 
+ 714   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   4441    ----
+   CONSTANT SIZE    =    503    ----
+   XDATA SIZE       =     23    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     43      41
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
